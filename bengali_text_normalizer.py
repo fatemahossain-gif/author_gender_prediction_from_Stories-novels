@@ -5,6 +5,7 @@ Handles Bengali script normalization without pretrained models
 
 import re
 import unicodedata
+from collections import Counter
 
 class BengaliNormalizer:
     """
@@ -18,23 +19,8 @@ class BengaliNormalizer:
         'ও': 'এবং',  # Formal conjunction to standard
         'যাহা': 'যা',  # Formal pronoun
         'কাহার': 'কার',  # Formal possessive
-        'সেই': 'সেই',  # Keep formal
-        'এই': 'এই',   # Keep formal
-    }
-    
-    # Cholito (colloquial) common contractions
-    COLLOQUIAL_TO_STANDARD = {
-        'র': 'রা',      # Plural marker variant
-        'ে': 'তে',      # Location marker variant
-        'দেখছি': 'দেখছ', # Verb variant
-        'বলছি': 'বলছ',  # Verb variant
-    }
-    
-    # Character normalizations
-    CHAR_NORMALIZATION = {
-        'ঃ': ':',       # Visarga (colon)
-        'ঁ': 'ং',      # Anusvara variant
-        '়': '',        # Nukta (diacritic)
+        'তাহার': 'তার',  # Formal possessive
+        'এহেন': 'এমন',  # Formal adjective
     }
     
     def __init__(self):
@@ -54,8 +40,9 @@ class BengaliNormalizer:
         text = re.sub(r'\s+', ' ', text).strip()
         
         # Step 3: Normalize character variations
-        for old, new in self.CHAR_NORMALIZATION.items():
-            text = text.replace(old, new)
+        text = text.replace('ঃ', ':')
+        text = text.replace('ঁ', 'ং')
+        text = text.replace('়', '')
         
         # Step 4: Normalize formal variants (Shadhu to cholito)
         for formal, standard in self.FORMAL_VARIANTS.items():
@@ -74,7 +61,6 @@ class BengaliNormalizer:
     
     def _remove_diacritics(self, text):
         """Remove Bengali diacritical marks (matras)"""
-        # Vowel signs (matras)
         matras = 'ািীুূৃেৈোৌ়ৗ'
         for matra in matras:
             text = text.replace(matra, '')
@@ -82,40 +68,41 @@ class BengaliNormalizer:
     
     def _normalize_punctuation(self, text):
         """Normalize punctuation marks"""
-        # Common normalizations
-        text = text.replace('।', '।')  # Danda
-        text = text.replace('॥', '।।')  # Double danda
-        
-        # Remove extra punctuation
+        text = text.replace('।', '।')
+        text = text.replace('॥', '।।')
         text = re.sub(r'[.!?]{2,}', '.', text)
-        
         return text
     
     def tokenize(self, text):
         """Tokenize into words (hand-crafted, no pretrained tokenizer)"""
-        # Normalize first
         text = self.normalize(text)
-        
-        # Split by spaces and punctuation, but keep word boundaries
         words = re.findall(r'[অ-ঔকখগঘঙচছজঝঞটঠডঢণতথদধনপফবভমযরলশষসহড়ঢ়য়]+', text)
-        
-        return [w for w in words if w]  # Remove empty strings
+        return [w for w in words if w]
     
-    def get_tokens_with_info(self, text):
-        """Get tokens with their properties"""
+    def get_tokens_with_pos(self, text):
+        """Get tokens with POS-inspired tagging (hand-crafted)"""
         tokens = self.tokenize(text)
-        token_info = []
+        pos_tags = []
         
         for token in tokens:
-            info = {
-                'token': token,
-                'length': len(token),
-                'has_vowel': any(c in self.vowels for c in token),
-                'has_consonant': any(c in self.consonants for c in token),
-            }
-            token_info.append(info)
+            tag = self._tag_pos(token)
+            pos_tags.append((token, tag))
         
-        return token_info
+        return pos_tags
+    
+    def _tag_pos(self, token):
+        """Simple hand-crafted POS tagging based on morphology"""
+        # Common suffixes indicating parts of speech
+        if token.endswith('ছি') or token.endswith('ছে') or token.endswith('ছিল'):
+            return 'VERB'
+        elif token.endswith('া') or token.endswith('ে') or token.endswith('ো'):
+            return 'ADJ'  # Adjective ending
+        elif token.endswith('নি') or token.endswith('বি') or token.endswith('গি'):
+            return 'NOUN'
+        elif token.endswith('র') or token.endswith('দের'):
+            return 'PRON'  # Pronoun/possessive
+        else:
+            return 'NOUN'  # Default
 
 
 class TextPreprocessor:
@@ -126,19 +113,13 @@ class TextPreprocessor:
     
     def preprocess(self, text):
         """Full preprocessing pipeline"""
-        # Normalize
         text = self.normalizer.normalize(text)
-        
-        # Tokenize
         tokens = self.normalizer.tokenize(text)
-        
         return tokens, text
     
     def get_sentence_tokens(self, text):
         """Split into sentences then tokenize"""
         text = self.normalizer.normalize(text)
-        
-        # Split by sentence-ending markers
         sentences = re.split(r'[।॥]', text)
         
         sentence_tokens = []
